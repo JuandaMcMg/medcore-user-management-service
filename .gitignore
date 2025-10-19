@@ -1,0 +1,61 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+yarn-debug.log
+yarn-error.log
+.pnpm-debug.log
+
+# Environment variables
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# IDE and editor folders
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Testing
+coverage/
+.nyc_output/
+
+# Package manager files
+package-lock.json
+yarn.lock
+.pnpm-lock.yaml
+
+# Vercel
+.vercel/
+.vercel
+
+# Prisma
+prisma/migrations/
+prisma/.env
+src/generated/*
+
+# Misc
+.cache/
+.temp/
+.tmp/
+temp/
+tmp/
+
+# Uploaded files
+uploads/
+public/uploads/

@@ -1,0 +1,194 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["windows", "rhel-openssl-3.0.x"]
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMINISTRADOR
+  MEDICO
+  ENFERMERO
+  PACIENTE
+}
+
+enum IdType {
+  CC // Cédula de Ciudadanía
+  TI // Tarjeta de Identidad
+  CE // Cédula de Extranjería
+  PP // Pasaporte
+  NIT // Número de Identificación Tributaria
+}
+
+enum Gender {
+  MASCULINO
+  FEMENINO
+  OTRO
+  NO_RESPONDE
+}
+
+enum BloodType {
+  O_POSITIVE
+  O_NEGATIVE
+  A_POSITIVE
+  A_NEGATIVE
+  B_POSITIVE
+  B_NEGATIVE
+  AB_POSITIVE
+  AB_NEGATIVE
+}
+
+model Users {
+  id                      String          @id @default(auto()) @map("_id") @db.ObjectId
+  id_number               String          @unique
+  id_type                 IdType
+  email                   String          @unique
+  fullname                String
+  date_of_birth           DateTime
+  age                     Int
+  gender                  Gender? // Ahora usa el enum Gender
+  phone                   String?
+  address                 String?
+  city                    String?
+  blood_type              BloodType? // Ahora usa el enum BloodType
+  password                String
+  role                    Role
+  status                  String          @default("PENDING")
+  verificationCode        String?
+  verificationCodeExpires DateTime?
+  emergencyContact        Json? // Estructura: {name: String, phone: String, relationship: String}
+  profileImage            String? // URL para foto de perfil
+  lastLogin               DateTime? // Última fecha de inicio de sesión
+  createdAt               DateTime        @default(now())
+  updatedAt               DateTime        @updatedAt
+  activityLogs            ActivityLog[]
+  userDeptRoles           UserDeptRoles[] @relation("UserToAffiliations")
+  patient                 Pattient?
+  diagnosticCreated       Diagnostics[]   @relation("DoctorDiagnostics")
+}
+
+model ActivityLog {
+  id         String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId     String?  @db.ObjectId
+  userEmail  String?
+  userName   String?
+  action     String
+  entityType String?
+  entityId   String?  @db.ObjectId
+  oldValues  Json?
+  newValues  Json?
+  details    String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       Users?   @relation(fields: [userId], references: [id])
+}
+
+model Departments {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  name         String          @unique
+  specialties  Specialties[]
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  affiliations UserDeptRoles[] @relation("DepartmentToAffiliations")
+}
+
+model Specialties {
+  id           String          @id @default(auto()) @map("_id") @db.ObjectId
+  name         String          @unique
+  departmentId String          @db.ObjectId
+  department   Departments     @relation(fields: [departmentId], references: [id])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+  affiliations UserDeptRoles[] @relation("SpecialtyToAffiliations")
+}
+
+// vínculo Usuario–Departamento–Rol (permite RBAC por ámbito)
+model UserDeptRoles {
+  id           String       @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String       @db.ObjectId
+  departmentId String       @db.ObjectId
+  role         Role
+  specialtyId  String?      @db.ObjectId
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  user         Users        @relation("UserToAffiliations", fields: [userId], references: [id])
+  department   Departments  @relation("DepartmentToAffiliations", fields: [departmentId], references: [id])
+  specialty    Specialties? @relation("SpecialtyToAffiliations", fields: [specialtyId], references: [id])
+}
+
+model Pattient {
+  id             String        @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String        @unique @db.ObjectId
+  documentNumber String        @unique
+  documentType   IdType
+  birthDate      DateTime
+  age            Int
+  gender         Gender
+  phone          String?
+  address        String?
+  status         String        @default("ACTIVE")
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  user           Users         @relation(fields: [userId], references: [id])
+  diagnostics    Diagnostics[]
+}
+
+model Diagnostics {
+  id              String               @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String               @db.ObjectId
+  doctorId        String               @db.ObjectId
+  title           String
+  description     String
+  symptoms        String
+  diagnosis       String
+  treatment       String
+  observations    String?
+  nextAppointment DateTime?
+  state           diagnosticState      @default(ACTIVE)
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  //Relaciones
+  patient         Pattient             @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor          Users                @relation("DoctorDiagnostics", fields: [doctorId], references: [id])
+  documents       DiagnosticDocument[]
+
+  @@index([patientId])
+  @@index([doctorId])
+}
+
+model DiagnosticDocument {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  diagnosticId  String   @db.ObjectId
+  filename      String //Nombre original del archivo
+  storeFilename String //Nombre del archivo en el almacenamiento
+  filePath      String //Ruta del archivo en el almacenamiento
+  fileType      String //pdf, jpg, png, etc.
+  mimeType      String //application/pdf, image/jpeg, etc.
+  fileSize      Int //Tamaño del archivo en bytes
+  description   String?
+  uploadedBy    String   @db.ObjectId
+  createdAt     DateTime @default(now())
+
+  //Relaciones
+  diagnostic Diagnostics @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+
+  @@index([diagnosticId])
+}
+
+enum diagnosticState {
+  ACTIVE
+  ARCHIVED
+  DELETED
+}
