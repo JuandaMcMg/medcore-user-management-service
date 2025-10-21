@@ -31,6 +31,7 @@ app.use(helmet()); // Añade headers de seguridad
 app.use(bodyparser.json());
 app.use(sanitizeInputs); // Sanitiza las entradas contra XSS
 app.use('/api/v1/users', userRoutes);
+app.use('/api/users', userRoutes);
 
 // Error handling middleware
 app.use((err, req, res, next) => {
@@ -50,6 +51,9 @@ app.use((req, res) => {
     service: "user-management-service"
   });
 });
+
+
+database()
 
 app.listen(port, () => {
   console.log(`👥 User Management Service running on port ${port}`);
