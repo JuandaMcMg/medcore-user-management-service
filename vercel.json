@@ -12,13 +12,5 @@
       "src": "/(.*)",
       "dest": "src/index.js"
     }
-  ],
-  "env": {
-    "NODE_ENV": "production",
-    "PORT": "3003",
-    "MONGODB_URI": "@mongodb-uri",
-    "JWT_SECRET": "@jwt-secret",
-    "AUTH_SERVICE_URL": "@auth-service-url",
-    "AUDIT_SERVICE_URL": "@audit-service-url"
-  }
+  ]
 }
