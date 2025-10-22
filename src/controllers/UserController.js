@@ -308,10 +308,12 @@ const getAllUsers = async (req, res) => {
   try {
     const {
       page = "1",
-      limit = "10",
+      limit = "20",
       sortBy = "createdAt",     // email | fullname | role | createdAt | status
       sortOrder = "desc",
       role,
+      specialty,
+      state,
       status,
       q     
     } = req.query;
@@ -324,18 +326,56 @@ const getAllUsers = async (req, res) => {
 
     // Filtros
     const where = {};
-    if (role && VALID_ROLES.includes(role)) {
-      where.role = role;
+    
+    // Filtro por rol
+    if (role) {
+      let roleValue = role.toUpperCase();
+      // Mapear alias comunes a los roles válidos
+      const roleMap = {
+        'DOCTOR': 'MEDICO',
+        'NURSE': 'ENFERMERO', 
+        'PATIENT': 'PACIENTE',
+        'ADMIN': 'ADMINISTRADOR'
+      };
+      
+      if (roleMap[roleValue]) {
+        roleValue = roleMap[roleValue];
+      }
+      
+      if (VALID_ROLES.includes(roleValue)) {
+        where.role = roleValue;
+        console.log(`🔍 Filtro aplicado - Rol: ${roleValue}`);
+      } else {
+        console.log(`⚠️  Rol inválido recibido: ${role}, roles válidos: ${VALID_ROLES.join(', ')}`);
+      }
     }
-    if (status) {
-      where.status = status;
+    
+    // Filtro por estado (acepta tanto 'state' como 'status' para compatibilidad)
+    const userState = state || status;
+    if (userState) {
+      where.status = userState.toUpperCase();
     }
+    
+    // Filtro por búsqueda de texto
     if (q) {
       where.OR = [
         { email: { contains: q, mode: "insensitive" } },
         { fullname: { contains: q, mode: "insensitive" } }
       ];
     }
+
+    // Filtro por especialidad (solo para médicos y enfermeros)
+    if (specialty) {
+      where.userDeptRoles = {
+        some: {
+          specialty: {
+            name: { contains: specialty, mode: "insensitive" }
+          }
+        }
+      };
+    }
+
+    console.log('🔍 Filtros aplicados:', where);
 
     // Consulta con paginación y filtros
     const users = await prisma.user.findMany({
@@ -349,18 +389,48 @@ const getAllUsers = async (req, res) => {
         id_number: true,
         id_type: true,
         age: true,
-        createdAt: true 
+        createdAt: true,
+        userDeptRoles: {
+          select: {
+            role: true,
+            department: {
+              select: {
+                id: true,
+                name: true
+              }
+            },
+            specialty: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          }
+        }
       },
       orderBy: { [orderField]: orderDirection },
       skip: (pageNum - 1) * pageSize,
       take: pageSize
     });
 
+    console.log(`📊 Usuarios encontrados: ${users.length}, roles: ${users.map(u => u.role).join(', ')}`);
+
     // Conteo total para paginación
     const totalUsers = await prisma.user.count({ where });
     
+    // Construir descripción de filtros aplicados
+    const appliedFilters = [];
+    if (role) appliedFilters.push(`role: ${role}`);
+    if (specialty) appliedFilters.push(`specialty: ${specialty}`);
+    if (userState) appliedFilters.push(`state: ${userState}`);
+    if (q) appliedFilters.push(`search: ${q}`);
+    
+    const filtersDesc = appliedFilters.length > 0 
+      ? ` con filtros: ${appliedFilters.join(', ')}` 
+      : '';
+
     // Registrar consulta de usuarios
-    await logView('User', null, req.user, req, `Consulta de lista de usuarios por ${req.user.email}`);
+    await logView('User', null, req.user, req, `Consulta de lista de usuarios por ${req.user.email}${filtersDesc}`);
 
     return res.json({
       users,
@@ -369,6 +439,16 @@ const getAllUsers = async (req, res) => {
         pages: Math.ceil(totalUsers / pageSize),
         currentPage: pageNum,
         pageSize: pageSize
+      },
+      filters: {
+        role,
+        specialty,
+        state: userState,
+        search: q,
+        page: pageNum,
+        limit: pageSize,
+        sortBy: orderField,
+        sortOrder: orderDirection
       }
     });
   } catch (error) {
