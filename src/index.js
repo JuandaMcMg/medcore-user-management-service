@@ -20,6 +20,8 @@ console.log('[BOOT][auth] JWT_SECRET len=', s.length, 'sha256=', crypto.createHa
 // Permitir CORS para comunicación entre microservicios
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001"], // Frontend y API Gateway
+  methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+  allowedHeaders: ["Content-Type", "Authorization"],
   credentials: true,
 }));
 
@@ -37,6 +39,7 @@ app.use(bodyparser.json());
 app.use(sanitizeInputs); // Sanitiza las entradas contra XSS
 app.use('/api/v1/users', userRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/v1/users', require('../src/routes/userRoutes'))
 
 
 // Error handling middleware
@@ -65,5 +68,7 @@ app.listen(port, () => {
   console.log(`👥 User Management Service running on port ${port}`);
   database();
 });
+
+app.use(cors());
 
 module.exports = app;

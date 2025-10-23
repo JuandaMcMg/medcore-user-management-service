@@ -28,8 +28,14 @@ router.use('/patients', (req,res,next)=>{
 
 //http://localhost:3003/api/v1/users
 router.post('/', verifyJWT, permission('user:create'), Users.createByAdmin); 
+// http://localhost:3003/api/v1/users/doctors
+router.post('/doctors', verifyJWT, Users.createDoctor);
+//http://localhost:3003/api/v1/users/nurses
+router.post('/nurses', verifyJWT, Users.createNurse);
 //http://localhost:3003/api/v1/users
 router.get('/', verifyJWT, permission('user:list'), Users.getAllUsers);
+//http://localhost:3003/api/v1/affiliations/by-specialty?specialty=cardiologia
+router.get('/by-specialty', verifyJWT, Users.getDoctorsBySpecialty);
 //http://localhost:3003/api/v1/users/by-role?role=DOCTOR
 router.get('/by-role', verifyJWT, Users.getUsersByRole);
 //http://localhost:3003/api/v1/users/doctors/:id
@@ -46,6 +52,8 @@ router.patch('/nurses/state/:id', verifyJWT, Users.updateNurseStateById);
 router.patch('/:id/deactivate', verifyJWT, permission('user:deactivate'), Users.deactivate);
 //http://localhost:3003/api/v1/users/:id/activate
 router.patch('/:id/activate', verifyJWT, permission('user:activate'), Users.activate);
+//http://localhost:3003/api/v1/user/:id/toggle-status
+router.patch('/:id/toggle-status', Users.toggleUserStatus);
 //http://localhost:3003/api/v1/users/doctors/:id
 router.put('/doctors/:id', verifyJWT, Users.updateDoctorById);
 //http://localhost:3003/api/v1/users/nurses/:id
