@@ -20,6 +20,12 @@ router.get('/health', (req, res) => {
   });
 });
 
+router.use('/patients', (req,res,next)=>{
+  // Debug opcional para confirmar que entra
+  console.log('[users] patients router hit:', req.method, req.originalUrl);
+  next();
+}, patientRoutes);
+
 //http://localhost:3003/api/v1/users
 router.post('/', verifyJWT, permission('user:create'), Users.createByAdmin); 
 //http://localhost:3003/api/v1/users
@@ -51,7 +57,6 @@ router.delete('/:id', verifyJWT, permission('user:delete'), Users.deleteUser);
 //http://localhost:3003/api/v1/users/bulk-import
 router.post('/bulk-import', verifyJWT, permission('user:create'), upload.single('file'), Users.bulkImport);
 
-router.use('/patients', patientRoutes);
 router.get('/:id', verifyJWT, Users.getUserById);
 
 //http://localhost:3003/api/v1/users/register

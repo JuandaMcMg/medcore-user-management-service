@@ -4,7 +4,6 @@ const verifyJWT = require("../middlewares/authMiddleware");
 const requireRole = require("../middlewares/roleMiddleware");
 const Patients = require("../controllers/PatientController");
 
-// Sugerencia: todo este router requiere JWT
 router.use(verifyJWT);
 
 // Health
@@ -19,12 +18,12 @@ router.get("/health", (req, res) => {
 
 // GET /api/v1/users/patients
 
-router.get("/", verifyJWT, requireRole("ADMINISTRADOR"), Patients.list);
+router.get("/", requireRole("ADMINISTRADOR", "MEDICO"), Patients.list);
 
 // GET /api/v1/patients/:id
-router.get(  "/:id", verifyJWT, requireRole("ADMINISTRADOR", "MEDICO"), Patients.getById);
+router.get(  "/:id", requireRole("ADMINISTRADOR", "MEDICO"), Patients.getById);
 
 // PUT /api/v1/patients/:id
-router.put("/:id", verifyJWT, requireRole("ADMINISTRADOR", "MEDICO", "ENFERMERO"), Patients.update );
+router.put("/:id", requireRole("ADMINISTRADOR", "MEDICO", "ENFERMERO"), Patients.update );
 
 module.exports = router;
