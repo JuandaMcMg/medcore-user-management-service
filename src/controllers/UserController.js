@@ -5,7 +5,9 @@ const { generateVerificationCode } = require("../config/emailConfig");
 const prisma = new PrismaClient();
 const bcrypt = require("bcryptjs");
 
+
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL; // ej: http://localhost:3001
+const ORG_SERVICE_URL = process.env.ORG_SERVICE_URL || "http://localhost:3004/api/v1";
 
 const { 
   logActivity, 
@@ -24,18 +26,231 @@ const {
   isValidAge
 } = require("../utils/userUtils");
 
+const createDoctor = async (req, res) => {
+  const token = req.headers.authorization; // Reenviar token
+  try {
+    const {
+      fullname,
+      email,
+      password,
+      id_number,
+      id_type,
+      date_of_birth,
+      departmentId,
+      specialtyId
+    } = req.body;
 
+    // Validaciones básicas
+    if (!fullname || !email || !password || !id_number || !id_type || !date_of_birth) {
+      return res.status(400).json({ message: "Todos los campos obligatorios deben ser enviados" });
+    }
 
-function buildBulkVerification(status) {
-  const st = String(status || "PENDING").toUpperCase();
-  if (st !== "PENDING") {
-    return { verificationCode: null, verificationCodeExpires: null };
+    // Validar formato del correo
+    if (!isEmailValid(email)) {
+      return res.status(400).json({ message: "Correo electrónico inválido" });
+    }
+
+    // Validar contraseña
+    if (!isPasswordStrong(password)) {
+      return res.status(400).json({ message: "La contraseña no cumple los requisitos mínimos" });
+    }
+
+    // Calcular edad
+    const birthDate = new Date(date_of_birth);
+    const age = calculateAge(birthDate);
+    if (!isValidAge(age)) {
+      return res.status(400).json({ message: "Edad fuera de rango válido" });
+    }
+
+     // Verificar si ya existe el email o el número de identificación
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { id_number }
+        ]
+      },
+      select: { email: true, id_number: true }
+    });
+
+    if (existingUser) {
+      const field = existingUser.email === email ? "correo electrónico" : "número de identificación";
+      return res.status(400).json({ message: `El ${field} ya está registrado` });
+    }
+
+    // Encriptar contraseña
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    // Crear usuario en user-management
+    console.log(" [USER-MANAGEMENT] Creando usuario en base de datos...");
+    const newDoctor = await prisma.user.create({
+      data: {
+        fullname,
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        id_number,
+        id_type,
+        date_of_birth: birthDate,
+        age,
+        role: "MEDICO",
+        status: "ACTIVE"
+      }
+    });
+
+    console.log("✅ [USER-MANAGEMENT] Usuario médico creado:", newDoctor.id);
+
+    // Crear afiliación en organization-service
+    console.log(" [USER-MANAGEMENT] Registrando afiliación en ORGANIZATION-SERVICE...");
+    try {
+      const orgResponse = await axios.post(
+        "http://localhost:3004/api/v1/affiliations",
+        {
+          userId: newDoctor.id,
+          role: "MEDICO",
+          departmentId,
+          specialtyId
+        },
+        {
+          headers: {
+            Authorization: token
+          }
+        }
+      );
+
+      console.log("✅ [ORGANIZATION-SERVICE] Afiliación registrada:", orgResponse.data);
+    } catch (orgError) {
+      console.error("❌ [ORGANIZATION-SERVICE] Error al crear afiliación:", orgError.response?.data || orgError.message);
+      return res.status(orgError.response?.status || 500).json({
+        message: "Error al registrar la afiliación del médico",
+        error: orgError.response?.data || orgError.message
+      });
+    }
+
+    // Registrar log de creación
+    await logCreate("User", newDoctor, req.user, req, `Médico ${email} creado exitosamente`);
+
+    return res.status(201).json({
+      message: "Médico creado y afiliado correctamente",
+      user: {
+        id: newDoctor.id,
+        fullname: newDoctor.fullname,
+        email: newDoctor.email,
+        role: newDoctor.role
+      }
+    });
+  } catch (error) {
+    console.error(" [USER-MANAGEMENT] Error al registrar el doctor:", error);
+    return res.status(500).json({
+      message: "Error al registrar el doctor",
+      error: error.message
+    });
   }
-  const verificationCode = generateVerificationCode();
-  const expires = new Date();
-  expires.setHours(expires.getHours() + 24); // 24 horas de validez
-  return { verificationCode, verificationCodeExpires: expires };
-}
+};
+
+const createNurse = async (req, res) => {
+  const token = req.headers.authorization;
+  try {
+    const {
+      fullname,
+      email,
+      password,
+      id_number,
+      id_type,
+      date_of_birth,
+      departmentId
+    } = req.body;
+
+    if (!fullname || !email || !password || !id_number || !id_type || !date_of_birth || !departmentId) {
+      return res.status(400).json({ message: "Todos los campos son obligatorios" });
+    }
+
+    if (!isEmailValid(email)) {
+      return res.status(400).json({ message: "Correo electrónico inválido" });
+    }
+
+    if (!isPasswordStrong(password)) {
+      return res.status(400).json({ message: "Contraseña insegura" });
+    }
+
+    const birthDate = new Date(date_of_birth);
+    const age = calculateAge(birthDate);
+    if (!isValidAge(age)) {
+      return res.status(400).json({ message: "Edad fuera de rango válido" });
+    }
+
+     // Verificar si ya existe el email o el número de identificación
+    const existingUser = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { email },
+          { id_number }
+        ]
+      },
+      select: { email: true, id_number: true }
+    });
+
+    if (existingUser) {
+      const field = existingUser.email === email ? "correo electrónico" : "número de identificación";
+      return res.status(400).json({ message: `El ${field} ya está registrado` });
+    }
+
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    console.log("🧩 [USER-MANAGEMENT] Creando usuario enfermero...");
+    const newNurse = await prisma.user.create({
+      data: {
+        fullname,
+        email: email.toLowerCase(),
+        password: hashedPassword,
+        id_number,
+        id_type,
+        date_of_birth: birthDate,
+        age,
+        role: "ENFERMERO",
+        status: "ACTIVE"
+      }
+    });
+
+    console.log("✅ [USER-MANAGEMENT] Usuario enfermero creado:", newNurse.id);
+
+    // Registrar afiliación con departmentId
+    try {
+      const orgResponse = await axios.post(
+        "http://localhost:3004/api/v1/affiliations",
+        {
+          userId: newNurse.id,
+          role: "ENFERMERO",
+          departmentId
+        },
+        { headers: { Authorization: token } }
+      );
+
+      console.log("🏥 [ORGANIZATION-SERVICE] Afiliación registrada:", orgResponse.data);
+    } catch (orgError) {
+      console.error("❌ [ORGANIZATION-SERVICE] Error al crear afiliación:", orgError.response?.data || orgError.message);
+      return res.status(orgError.response?.status || 500).json({
+        message: "Error al registrar la afiliación del enfermero",
+        error: orgError.response?.data || orgError.message
+      });
+    }
+
+    await logCreate("User", newNurse, req.user, req, `Enfermero ${email} creado exitosamente`);
+
+    return res.status(201).json({
+      message: "Enfermero creado y afiliado correctamente",
+      user: {
+        id: newNurse.id,
+        fullname: newNurse.fullname,
+        email: newNurse.email,
+        role: newNurse.role
+      }
+    });
+  } catch (error) {
+    console.error("❌ [USER-MANAGEMENT] Error al crear enfermero:", error);
+    return res.status(500).json({ message: "Error interno al crear enfermero", error: error.message });
+  }
+};
+
 
 const createByAdmin = async (req, res) => {
 
@@ -126,7 +341,7 @@ const createByAdmin = async (req, res) => {
       date_of_birth: birthDate,
       age,
       role: role.toUpperCase(),
-      status: "ACTIVE", // Los usuarios creados por admin están activos por defecto
+      status: "PENDING", // Los usuarios creados por admin están activos por defecto
     };
       
 
@@ -178,6 +393,20 @@ async function sendVerificationEmailViaAuth(email, code) {
     return { success: false, error: err.message };
   }
 }
+
+
+function buildBulkVerification(status) {
+  // Solo genera código si el usuario está en estado pendiente
+  if (status !== "PENDING") {
+    return { verificationCode: null, verificationCodeExpires: null };
+  }
+
+  const verificationCode = generateVerificationCode(); // ya la tienes importada
+  const verificationCodeExpires = new Date(Date.now() + 60 * 60 * 1000); // 1 hora desde ahora
+
+  return { verificationCode, verificationCodeExpires };
+}
+
 
 const bulkImport = async (req, res) => {
   try {
@@ -540,6 +769,66 @@ const getDoctorById = async (req, res) => {
   }
 };
 
+// controllers/UserController.js
+const getDoctorsBySpecialty = async (req, res) => {
+  const { specialty } = req.query;
+  const token = req.headers.authorization;
+
+  if (!specialty) {
+    return res.status(400).json({ message: "Debe proporcionar el parámetro 'specialty'" });
+  }
+
+  console.log(`🔍 [USER-MANAGEMENT] Buscando médicos por especialidad: ${specialty}`);
+
+  try {
+    // 1️⃣ Consultar al ORGANIZATION-SERVICE
+    const orgResponse = await axios.get(
+      `http://localhost:3004/api/v1/affiliations/by-specialty?specialty=${encodeURIComponent(specialty)}`,
+      { headers: { Authorization: token } }
+    );
+
+    // 👇 Cambiado aquí
+    const affiliatedDoctors = orgResponse.data?.data || [];
+
+    if (affiliatedDoctors.length === 0) {
+      return res.status(404).json({ message: `No se encontraron médicos con la especialidad '${specialty}'` });
+    }
+
+    // 👇 Cambiado aquí
+    const doctorIds = affiliatedDoctors.map(a => a.doctorId);
+
+    // 3️⃣ Buscar los usuarios locales
+    const doctors = await prisma.user.findMany({
+      where: {
+        id: { in: doctorIds },
+        role: 'MEDICO'
+      },
+      select: {
+        id: true,
+        fullname: true,
+        email: true,
+        age: true,
+        status: true
+      }
+    });
+
+    return res.status(200).json({
+      message: `Médicos encontrados con la especialidad '${specialty}'`,
+      count: doctors.length,
+      doctors
+    });
+
+  } catch (error) {
+    console.error("❌ [USER-MANAGEMENT] Error al filtrar médicos por especialidad:", error.response?.data || error.message);
+
+    return res.status(error.response?.status || 500).json({
+      message: "Error al obtener médicos por especialidad",
+      error: error.response?.data || error.message
+    });
+  }
+};
+
+
 const updateDoctorById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -634,7 +923,7 @@ const updateDoctorStateById = async (req, res) => {
 
     if (!status || !VALID_STATUSES.includes(status.toUpperCase())) {
       return res.status(400).json({ message: `Estado inválido. Debe ser uno de: ${VALID_STATUSES.join(', ')}` });
-    }
+    } 
 
     // Buscar usuario
     const doctor = await prisma.user.findUnique({
@@ -942,6 +1231,47 @@ const activate = async (req, res) => {
   }
 };
 
+const toggleUserStatus = async (req, res) => {
+  try {
+    const userId = req.params.id;
+    console.log("🟢 [USER-SERVICE] Cambio de estado solicitado para:", userId);
+
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      console.log("🔴 Usuario no encontrado:", userId);
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
+
+     // 🚫 Si el usuario está en estado PENDING, no se puede cambiar
+    if (user.status === "PENDING") {
+      console.log("⚠️ El usuario aún no ha verificado su cuenta:", user.email);
+      return res.status(400).json({
+        message:
+          "El usuario aún no ha verificado su cuenta. No puede ser activado ni deshabilitado hasta completar la verificación.",
+      });
+    }
+
+    const newStatus = user.status ===  "ACTIVE" ? "DISABLED" : "ACTIVE";
+
+    const updatedUser = await prisma.user.update({
+      where: { id: userId },
+      data: { status: newStatus },
+    });
+
+    console.log("✅ Estado actualizado:", updatedUser.status);
+
+    return res.status(200).json({
+      message: `Usuario ${newStatus === "ACTIVE" ? "activado" : "deshabilitado"}`,
+      user: updatedUser,
+    });
+
+  } catch (error) {
+    console.error("❌ [USER-SERVICE] Error al cambiar estado:", error);
+    return res.status(500).json({ message: "Error al cambiar el estado del usuario", error: error.message });
+  }
+};
+
+
 const updatePassword = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1071,5 +1401,9 @@ module.exports = {
   updateDoctorById,
   updateNurseById,
   updateDoctorStateById,
-  updateNurseStateById
+  updateNurseStateById,
+  createDoctor,
+  createNurse,
+  getDoctorsBySpecialty,
+  toggleUserStatus
 };
