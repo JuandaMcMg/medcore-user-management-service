@@ -56,12 +56,12 @@ enum DiagnosticState {
 
 model User {
   id                      String     @id @default(auto()) @map("_id") @db.ObjectId
-  id_number               String     @unique
-  id_type                 IdType
+  id_number               String?    @unique
+  id_type                 IdType?
   email                   String     @unique
   fullname                String
-  date_of_birth           DateTime
-  age                     Int
+  date_of_birth           DateTime?
+  age                     Int?
   gender                  Gender?
   phone                   String?
   address                 String?
@@ -154,18 +154,18 @@ model UserDeptRole {
 }
 
 model Patient {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String   @unique
-  documentNumber String   @unique
-  documentType   IdType
-  birthDate      DateTime
-  age            Int
-  gender         Gender
+  id             String    @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String    @unique
+  documentNumber String?   @unique
+  documentType   IdType?
+  birthDate      DateTime?
+  age            Int?
+  gender         Gender?
   phone          String?
   address        String?
-  status         String   @default("ACTIVE")
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  status         String    @default("ACTIVE")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   // Relaciones
   user        User         @relation(fields: [userId], references: [id])
