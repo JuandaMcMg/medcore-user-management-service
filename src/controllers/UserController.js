@@ -4,8 +4,6 @@ const {PrismaClient} = require ("../generated/prisma");
 const { generateVerificationCode } = require("../config/emailConfig");
 const prisma = new PrismaClient();
 const bcrypt = require("bcryptjs");
-
-
 const AUTH_SERVICE_URL = process.env.AUTH_SERVICE_URL; // ej: http://localhost:3001
 const ORG_SERVICE_URL = process.env.ORG_SERVICE_URL || "http://localhost:3004/api/v1";
 
@@ -26,7 +24,7 @@ const {
   isValidAge
 } = require("../utils/userUtils");
 
-const createDoctor = async (req, res) => {
+const VALID_ID_TYPES = new Set(["CC", "TI", "CE", "PP", "NIT"]);const createDoctor = async (req, res) => {
   const token = req.headers.authorization; // Reenviar token
   try {
     const {
@@ -252,6 +250,52 @@ const createNurse = async (req, res) => {
 };
 
 
+async function sendVerificationEmailViaAuth(email, fullname, code, expiresInHours = 24) {
+  try {
+    await axios.post(
+      `${AUTH_SERVICE_URL}/api/v1/auth/send-verification`,
+      { email, fullname, verificationCode: code, expiresInHours },
+      { timeout: 10000 }
+    );
+    return { success: true };
+  } catch (err) {
+    console.warn(
+      `[EMAIL] No se pudo enviar email a ${email}: ${err.message}`,
+      err.response?.status, err.response?.data
+    );
+    return { success: false, error: err.message };
+  }
+}
+
+function normUpper(s) {
+  return (s ?? "").toString().trim().toUpperCase();
+}
+
+async function upsertDepartmentByName(name) {
+  const n = normUpper(name);
+  if (!n) return null;
+  let dep = await prisma.department.findFirst({ where: { name: n } });
+  if (!dep) dep = await prisma.department.create({ data: { name: n } });
+  return dep;
+}
+
+async function upsertSpecialtyByName(name, departmentId) {
+  const n = normUpper(name);
+  if (!n) return null;
+  let sp = await prisma.specialty.findFirst({ where: { name: n } });
+  if (!sp) {
+    if (!departmentId) return null; // no crear sin depto
+    sp = await prisma.specialty.create({ data: { name: n, departmentId } });
+  }
+  return sp;
+}
+
+function normalizeRole(role) {
+  const r = normUpper(role);
+  if (r === "ENFERMERA") return "ENFERMERO";
+  return r;
+}
+
 const createByAdmin = async (req, res) => {
 
   try {
@@ -353,6 +397,7 @@ const createByAdmin = async (req, res) => {
     if (blood_type) userData.blood_type = blood_type.toUpperCase();
 
     console.log("🧩 Datos enviados a Prisma:", userData);
+    console.log("🧪 userData to Prisma:", JSON.stringify(userData, null, 2));
 
     // Guardar en la base de datos
     const newUser = await prisma.user.create({
@@ -445,57 +490,94 @@ const bulkImport = async (req, res) => {
     const inserted = [];
     const toEmail = [];
 
-    for (const userData of finalBatch) {
+    for (const r of finalBatch) {
       try {
-        const hashed = await bcrypt.hash(userData.passwordPlain, 10);
-        const effectiveStatus = (userData.status || "PENDING").toUpperCase();
-        const { verificationCode, verificationCodeExpires } = buildBulkVerification(effectiveStatus);
+        const email = r.email.toLowerCase().trim();
+        const fullname = r.fullname?.trim();
+        const role = normalizeRole(r.role);
+        const passwordPlain = r.passwordPlain || r.current_password || "TempPass123!";
+        const status = normUpper(r.status || "PENDING");
+        const phone = r.phone?.trim();
+        const dob = r.date_of_birth ? new Date(r.date_of_birth) : null;
+        const age = dob ? calculateAge(dob) : null;
 
-        const dob = userData.date_of_birth ? new Date(userData.date_of_birth) : null;
-        const age = userData.age ? Number(userData.age) : (dob ? calculateAge(dob) : null);
+        // ⚠️ AQUÍ: define idTypeValue a partir del CSV (tu CSV no lo trae, así que será null)
+        const idTypeRaw = (r.id_type || "").toString().trim().toUpperCase();
+        const idTypeValue = VALID_ID_TYPES.has(idTypeRaw) ? idTypeRaw : null;
 
-        const newUser = await prisma.user.create({
+        const hashed = await bcrypt.hash(passwordPlain, 10);
+        const { verificationCode, verificationCodeExpires } = buildBulkVerification(status);
+        
+        const user = await prisma.user.create({
           data: {
-            email: userData.email,
-            fullname: userData.fullname,
-            role: userData.role,
-            status: effectiveStatus,
+            email,
+            fullname,
             password: hashed,
-            id_number: userData.id_number,
-            id_type: userData.id_type || 'CC',
+            role,
+            status,
+            phone: phone || undefined,
             date_of_birth: dob || undefined,
-            age: typeof age === 'number' ? age : undefined,
-            gender: userData.gender || undefined,
-            phone: userData.phone || undefined,
-            city: userData.city || undefined,
-            address: userData.address || undefined,
-            ...(effectiveStatus === "PENDING" && verificationCode ? {
-              verificationCode,
-              verificationCodeExpires
-            } : {}),
+            age: typeof age === "number" ? age : undefined,
+            ...(status === "PENDING" && verificationCode ? { verificationCode, verificationCodeExpires } : {}),
+            ...(idTypeValue ? { id_type: idTypeValue } : {}),
+            ...(r.id_number ? { id_number: String(r.id_number).trim() } : {}),
           },
           select: { id: true, email: true, fullname: true, role: true, status: true }
         });
 
-        inserted.push(newUser);
+        inserted.push(user);
 
-        if (newUser.status === "PENDING" && verificationCode) {
-          toEmail.push({ email: newUser.email, code: verificationCode });
+        // 2) Perfiles por rol
+        if (role === "PACIENTE") {
+          await prisma.patient.create({
+            data: {
+              userId: user.id,
+              fullname: user.id.fullname,
+              birthDate: dob || undefined,
+              age: typeof age === "number" ? age : undefined,
+              phone: phone || undefined,
+              status: "ACTIVE"
+            }
+          });
+        } else if (role === "MEDICO" || role === "ENFERMERO") {
+          const departmentName = r.department;
+          const specialtyName = r.specialization;
+          const license = r.license_number;
+
+          const dep = await upsertDepartmentByName(departmentName);
+          const spec = await upsertSpecialtyByName(specialtyName, dep?.id);
+
+          if (dep) {
+            await prisma.userDeptRole.create({
+              data: {
+                userId: user.id,
+                departmentId: dep.id,
+                role,
+                specialtyId: spec?.id || undefined
+              }
+            });
+          }
+        }
+        // Emails de verificación (si aplica)
+        if (user.status === "PENDING" && verificationCode) {
+          toEmail.push({ email: user.email, fullname: user.fullname, code: verificationCode });
         }
 
       } catch (e) {
-        console.error("[INSERT] Error al insertar usuario:", userData.email, e.message);
-        errors.push({ email: userData.email, error: "Error al insertar usuario en BD", detail: e.message });
+        console.error("[INSERT] Error al insertar fila:", r.email, e.message);
+        errors.push({ email: r.email, error: "Error al insertar usuario en BD", detail: e.message });
       }
     }
+
 
     console.log(`[INSERT] Insertados OK: ${inserted.length}`);
 
     // Enviar emails vía Auth Service
     let emailsOk = 0, emailsFail = 0;
+
     if (toEmail.length) {
       const results = await Promise.allSettled(
-        toEmail.map(({ email, code }) => sendVerificationEmailViaAuth(email, code))
+        toEmail.map(({ email, fullname, code }) => sendVerificationEmailViaAuth(email, fullname, code, 24))
       );
 
       for (const r of results) {

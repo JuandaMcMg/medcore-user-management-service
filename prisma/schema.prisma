@@ -5,8 +5,9 @@
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
 }
 
 datasource db {
@@ -55,12 +56,12 @@ enum DiagnosticState {
 
 model User {
   id                      String     @id @default(auto()) @map("_id") @db.ObjectId
-  id_number               String     @unique
-  id_type                 IdType
+  id_number               String?    @unique
+  id_type                 IdType?
   email                   String     @unique
   fullname                String
-  date_of_birth           DateTime
-  age                     Int
+  date_of_birth           DateTime?
+  age                     Int?
   gender                  Gender?
   phone                   String?
   address                 String?

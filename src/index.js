@@ -12,6 +12,11 @@ const port = process.env.PORT || 3003;
 
 const app = express();
 
+const crypto = require('crypto');
+const s = process.env.JWT_SECRET || '';
+console.log('[BOOT][auth] JWT_SECRET len=', s.length, 'sha256=', crypto.createHash('sha256').update(s).digest('hex'));
+
+
 // Permitir CORS para comunicación entre microservicios
 app.use(cors({
   origin: ["http://localhost:3000", "http://localhost:3001"], // Frontend y API Gateway
@@ -35,6 +40,7 @@ app.use(sanitizeInputs); // Sanitiza las entradas contra XSS
 app.use('/api/v1/users', userRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/v1/users', require('../src/routes/userRoutes'))
+
 
 // Error handling middleware
 app.use((err, req, res, next) => {
