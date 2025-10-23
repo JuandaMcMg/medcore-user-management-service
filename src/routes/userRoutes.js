@@ -9,6 +9,7 @@ const requireRole = require('../middlewares/roleMiddleware');
 const multer = require('multer');
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } }); // 60MB limit
 
+const patientRoutes = require('./patientRoutes');
 //http://localhost:3003/api/v1/users/health
 router.get('/health', (req, res) => {
   res.json({ 
@@ -18,6 +19,12 @@ router.get('/health', (req, res) => {
     endpoint: "/api/v1/users/health"
   });
 });
+
+router.use('/patients', (req,res,next)=>{
+  // Debug opcional para confirmar que entra
+  console.log('[users] patients router hit:', req.method, req.originalUrl);
+  next();
+}, patientRoutes);
 
 //http://localhost:3003/api/v1/users
 router.post('/', verifyJWT, permission('user:create'), Users.createByAdmin); 
@@ -58,6 +65,7 @@ router.delete('/:id', verifyJWT, permission('user:delete'), Users.deleteUser);
 //http://localhost:3003/api/v1/users/bulk-import
 router.post('/bulk-import', verifyJWT, permission('user:create'), upload.single('file'), Users.bulkImport);
 
+router.get('/:id', verifyJWT, Users.getUserById);
 
 //http://localhost:3003/api/v1/users/register
 //router.post('/register', Users.registerUser);

@@ -1,6 +1,8 @@
 // Logger service para el user-management-service
 // Este servicio se comunica con el audit-service para registrar actividades
 
+const axios = require('axios');
+
 const logActivity = async (logData) => {
   try {
     const auditServiceUrl = process.env.AUDIT_SERVICE_URL;
@@ -9,25 +11,54 @@ const logActivity = async (logData) => {
       return;
     }
 
-    // En un entorno de producción, aquí harías una llamada HTTP al audit service
-    // Por ahora, simplemente logueamos en consola
-    console.log('🔍 Audit Log:', {
-      timestamp: new Date().toISOString(),
+    // Preparar datos para el audit service
+    const auditData = {
+      userId: logData.userId,
+      userEmail: logData.userEmail,
+      action: logData.action,
+      resourceType: logData.entityType || logData.resourceType,
+      resourceId: logData.entityId || logData.resourceId,
+      description: logData.details || logData.description,
+      status: logData.status || 'success',
       service: 'user-management-service',
-      ...logData
-    });
-    
-    // TODO: Implementar llamada HTTP al audit service
-    // const response = await fetch(`${auditServiceUrl}/api/v1/audit/log`, {
-    //   method: 'POST',
-    //   headers: {
-    //     'Content-Type': 'application/json',
-    //   },
-    //   body: JSON.stringify(logData)
-    // });
+      metadata: {
+        userName: logData.userName,
+        newValues: logData.newValues,
+        oldValues: logData.oldValues,
+        ipAddress: logData.ipAddress,
+        userAgent: logData.userAgent,
+        ...logData.metadata
+      }
+    };
+
+    console.log('🔍 Sending Audit Log:', auditData);
+
+    // Implementar llamada HTTP al audit service
+    try {
+      const response = await axios.post(`${auditServiceUrl}/api/v1/audit/logs`, auditData, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        timeout: 5000 // 5 segundos timeout
+      });
+
+      console.log('✅ Audit log sent successfully:', response.data);
+      return response.data;
+    } catch (axiosError) {
+      console.error('❌ Error connecting to audit service:', axiosError.message);
+      if (axiosError.response) {
+        console.error('Response status:', axiosError.response.status);
+        console.error('Response data:', axiosError.response.data);
+      } else if (axiosError.request) {
+        console.error('No response received. Is the audit service running?');
+      }
+      throw axiosError;
+    }
     
   } catch (error) {
-    console.error('Error logging to audit service:', error);
+    console.error('❌ Error logging to audit service:', error.message);
+    // No queremos que falle el proceso principal por un error de auditoría
+    return { error: true, message: error.message };
   }
 };
 

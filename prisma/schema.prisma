@@ -4,17 +4,16 @@
 // Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
 // Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
 
-
 generator client {
-  provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
+  provider      = "prisma-client-js"
+  output        = "../src/generated/prisma"
+  binaryTargets = ["native", "windows", "debian-openssl-3.0.x"]
 }
 
 datasource db {
   provider = "mongodb"
   url      = env("DATABASE_URL")
 }
-
 
 enum Role {
   ADMINISTRADOR
@@ -56,13 +55,13 @@ enum DiagnosticState {
 }
 
 model User {
-  id                      String          @id @default(auto()) @map("_id") @db.ObjectId
-  id_number               String          @unique
-  id_type                 IdType
-  email                   String          @unique
+  id                      String     @id @default(auto()) @map("_id") @db.ObjectId
+  id_number               String?    @unique
+  id_type                 IdType?
+  email                   String     @unique
   fullname                String
-  date_of_birth           DateTime
-  age                     Int
+  date_of_birth           DateTime?
+  age                     Int?
   gender                  Gender?
   phone                   String?
   address                 String?
@@ -70,27 +69,27 @@ model User {
   blood_type              BloodType?
   password                String
   role                    Role
-  status                  String          @default("PENDING")
+  status                  String     @default("PENDING")
   verificationCode        String?
   verificationCodeExpires DateTime?
   emergencyContact        Json? // Estructura: {name: String, phone: String, relationship: String}
   profileImage            String?
   lastLogin               DateTime?
-  createdAt               DateTime        @default(now())
-  updatedAt               DateTime        @updatedAt
+  createdAt               DateTime   @default(now())
+  updatedAt               DateTime   @updatedAt
 
   // Relaciones
-  activityLogs            ActivityLog[]
-  userDeptRoles           UserDeptRole[]
-  patient                 Patient?
-  diagnosticsCreated      Diagnostic[]    @relation("DoctorDiagnostics")
+  activityLogs       ActivityLog[]
+  userDeptRoles      UserDeptRole[]
+  patient            Patient?
+  diagnosticsCreated Diagnostic[]   @relation("DoctorDiagnostics")
 
   @@map("Users")
 }
 
 model ActivityLog {
   id         String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId     String?
+  userId     String?  @db.ObjectId
   userEmail  String?
   userName   String?
   action     String
@@ -105,82 +104,80 @@ model ActivityLog {
   updatedAt  DateTime @updatedAt
 
   // Relaciones
-  user       User?    @relation(fields: [userId], references: [id])
+  user User? @relation(fields: [userId], references: [id])
 
   @@map("activity_logs")
 }
 
 model Department {
-  id           String          @id @default(auto()) @map("_id") @db.ObjectId
-  name         String          @unique
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relaciones
-  specialties  Specialty[]
+  specialties   Specialty[]
   userDeptRoles UserDeptRole[]
 
   @@map("departments")
 }
 
 model Specialty {
-  id           String          @id @default(auto()) @map("_id") @db.ObjectId
-  name         String          @unique
-  departmentId String
-  createdAt    DateTime        @default(now())
-  updatedAt    DateTime        @updatedAt
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  name         String   @unique
+  departmentId String   @db.ObjectId
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relaciones
-  department   Department      @relation(fields: [departmentId], references: [id])
+  department    Department     @relation(fields: [departmentId], references: [id])
   userDeptRoles UserDeptRole[]
 
   @@map("specialties")
 }
 
 model UserDeptRole {
-  id           String     @id @default(auto()) @map("_id") @db.ObjectId
-  userId       String
-  departmentId String
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId       String   @db.ObjectId
+  departmentId String   @db.ObjectId
   role         Role
-  specialtyId  String?
-  createdAt    DateTime   @default(now())
-  updatedAt    DateTime   @updatedAt
-
-   @@map("UserDeptRole")
+  specialtyId  String?  @db.ObjectId
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relaciones
-  user         User       @relation(fields: [userId], references: [id])
-  department   Department @relation(fields: [departmentId], references: [id])
-  specialty    Specialty? @relation(fields: [specialtyId], references: [id])
+  user       User       @relation(fields: [userId], references: [id])
+  department Department @relation(fields: [departmentId], references: [id])
+  specialty  Specialty? @relation(fields: [specialtyId], references: [id])
 
   @@map("user_dept_roles")
 }
 
 model Patient {
-  id             String       @id @default(auto()) @map("_id") @db.ObjectId
-  userId         String       @unique
-  documentNumber String       @unique
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String   @unique @db.ObjectId
+  documentNumber String   @unique
   documentType   IdType
   birthDate      DateTime
   age            Int
   gender         Gender
   phone          String?
   address        String?
-  status         String       @default("ACTIVE")
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  status         String   @default("ACTIVE")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
 
   // Relaciones
-  user           User         @relation(fields: [userId], references: [id])
-  diagnostics    Diagnostic[]
+  user        User         @relation(fields: [userId], references: [id])
+  diagnostics Diagnostic[]
 
   @@map("patients")
 }
 
 model Diagnostic {
-  id              String               @id @default(auto()) @map("_id") @db.ObjectId
-  patientId       String
-  doctorId        String
+  id              String          @id @default(auto()) @map("_id") @db.ObjectId
+  patientId       String          @db.ObjectId
+  doctorId        String          @db.ObjectId
   title           String
   description     String
   symptoms        String
@@ -188,14 +185,14 @@ model Diagnostic {
   treatment       String
   observations    String?
   nextAppointment DateTime?
-  state           DiagnosticState      @default(ACTIVE)
-  createdAt       DateTime             @default(now())
-  updatedAt       DateTime             @updatedAt
+  state           DiagnosticState @default(ACTIVE)
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   // Relaciones
-  patient         Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
-  doctor          User                 @relation("DoctorDiagnostics", fields: [doctorId], references: [id])
-  documents       DiagnosticDocument[]
+  patient   Patient              @relation(fields: [patientId], references: [id], onDelete: Cascade)
+  doctor    User                 @relation("DoctorDiagnostics", fields: [doctorId], references: [id])
+  documents DiagnosticDocument[]
 
   @@index([patientId])
   @@index([doctorId])
@@ -204,7 +201,7 @@ model Diagnostic {
 
 model DiagnosticDocument {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  diagnosticId  String
+  diagnosticId  String   @db.ObjectId
   filename      String
   storeFilename String
   filePath      String
@@ -212,11 +209,11 @@ model DiagnosticDocument {
   mimeType      String
   fileSize      Int
   description   String?
-  uploadedBy    String
+  uploadedBy    String   @db.ObjectId
   createdAt     DateTime @default(now())
 
   // Relaciones
-  diagnostic    Diagnostic @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
+  diagnostic Diagnostic @relation(fields: [diagnosticId], references: [id], onDelete: Cascade)
 
   @@index([diagnosticId])
   @@map("diagnostic_documents")
