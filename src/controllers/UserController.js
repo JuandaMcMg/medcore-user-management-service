@@ -769,66 +769,6 @@ const getDoctorById = async (req, res) => {
   }
 };
 
-// controllers/UserController.js
-const getDoctorsBySpecialty = async (req, res) => {
-  const { specialty } = req.query;
-  const token = req.headers.authorization;
-
-  if (!specialty) {
-    return res.status(400).json({ message: "Debe proporcionar el parámetro 'specialty'" });
-  }
-
-  console.log(`🔍 [USER-MANAGEMENT] Buscando médicos por especialidad: ${specialty}`);
-
-  try {
-    // 1️⃣ Consultar al ORGANIZATION-SERVICE
-    const orgResponse = await axios.get(
-      `http://localhost:3004/api/v1/affiliations/by-specialty?specialty=${encodeURIComponent(specialty)}`,
-      { headers: { Authorization: token } }
-    );
-
-    // 👇 Cambiado aquí
-    const affiliatedDoctors = orgResponse.data?.data || [];
-
-    if (affiliatedDoctors.length === 0) {
-      return res.status(404).json({ message: `No se encontraron médicos con la especialidad '${specialty}'` });
-    }
-
-    // 👇 Cambiado aquí
-    const doctorIds = affiliatedDoctors.map(a => a.doctorId);
-
-    // 3️⃣ Buscar los usuarios locales
-    const doctors = await prisma.user.findMany({
-      where: {
-        id: { in: doctorIds },
-        role: 'MEDICO'
-      },
-      select: {
-        id: true,
-        fullname: true,
-        email: true,
-        age: true,
-        status: true
-      }
-    });
-
-    return res.status(200).json({
-      message: `Médicos encontrados con la especialidad '${specialty}'`,
-      count: doctors.length,
-      doctors
-    });
-
-  } catch (error) {
-    console.error("❌ [USER-MANAGEMENT] Error al filtrar médicos por especialidad:", error.response?.data || error.message);
-
-    return res.status(error.response?.status || 500).json({
-      message: "Error al obtener médicos por especialidad",
-      error: error.response?.data || error.message
-    });
-  }
-};
-
-
 const updateDoctorById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -1383,7 +1323,160 @@ const deleteUser = async (req, res) => {
     return res.status(500).json({ message: "Error eliminando usuario" });
   }
 
+};
 
+// Filtrar doctores por especialidad
+const getDoctorsBySpecialty = async (req, res) => {
+  try {
+    const { specialty } = req.query;
+    const token = req.headers.authorization;
+
+    // Validar que se proporcione la especialidad
+    if (!specialty) {
+      return res.status(400).json({ 
+        message: "El parámetro 'specialty' es requerido" 
+      });
+    }
+
+    console.log(`🔍 [USER-SERVICE] Buscando doctores por especialidad: ${specialty}`);
+
+    // 1. Obtener afiliaciones de médicos con la especialidad específica
+    let affiliationsResponse;
+    try {
+      affiliationsResponse = await axios.get(
+        `${ORG_SERVICE_URL}/affiliations`,
+        {
+          params: {
+            role: 'MEDICO',
+            specialty: specialty
+          },
+          headers: {
+            Authorization: token
+          }
+        }
+      );
+    } catch (affiliationError) {
+      console.error("❌ Error al obtener afiliaciones:", affiliationError.response?.data || affiliationError.message);
+      return res.status(500).json({
+        message: "Error al consultar las afiliaciones de médicos",
+        error: affiliationError.response?.data || affiliationError.message
+      });
+    }
+
+    const affiliations = affiliationsResponse.data;
+    console.log(`📊 [USER-SERVICE] Afiliaciones encontradas: ${affiliations.length}`);
+
+    if (affiliations.length === 0) {
+      return res.json({
+        message: "No se encontraron médicos con la especialidad especificada",
+        doctors: [],
+        total: 0
+      });
+    }
+
+    // 2. Extraer IDs de usuarios
+    const userIds = affiliations
+      .filter(affiliation => affiliation.userId && affiliation.user)
+      .map(affiliation => affiliation.userId);
+
+    if (userIds.length === 0) {
+      return res.json({
+        message: "No se encontraron usuarios médicos con la especialidad especificada",
+        doctors: [],
+        total: 0
+      });
+    }
+
+    // 3. Obtener información completa de los usuarios
+    const doctors = await prisma.user.findMany({
+      where: {
+        id: { in: userIds },
+        status: "ACTIVE" // Solo médicos activos
+      },
+      select: {
+        id: true,
+        email: true,
+        fullname: true,
+        role: true,
+        status: true,
+        id_number: true,
+        id_type: true,
+        age: true,
+        gender: true,
+        phone: true,
+        address: true,
+        city: true,
+        blood_type: true,
+        createdAt: true
+      }
+    });
+
+    console.log(`✅ [USER-SERVICE] Médicos encontrados: ${doctors.length}`);
+
+    // 4. Combinar información de usuarios con sus afiliaciones
+    const doctorsWithSpecialties = doctors.map(doctor => {
+      const doctorAffiliations = affiliations.filter(aff => aff.userId === doctor.id);
+      
+      // Extraer información de departamentos y especialidades
+      const departments = [];
+      const specialties = [];
+
+      doctorAffiliations.forEach(aff => {
+        if (aff.department && !departments.some(dept => dept.id === aff.department.id)) {
+          departments.push({
+            id: aff.department.id,
+            name: aff.department.name
+          });
+        }
+        
+        if (aff.specialty && !specialties.some(spec => spec.id === aff.specialty.id)) {
+          specialties.push({
+            id: aff.specialty.id,
+            name: aff.specialty.name
+          });
+        }
+      });
+
+      return {
+        ...doctor,
+        departments,
+        specialties,
+        affiliations: doctorAffiliations.map(aff => ({
+          id: aff.id,
+          role: aff.role,
+          department: aff.department ? { id: aff.department.id, name: aff.department.name } : null,
+          specialty: aff.specialty ? { id: aff.specialty.id, name: aff.specialty.name } : null,
+          createdAt: aff.createdAt
+        }))
+      };
+    });
+
+    // Registrar la consulta
+    await logView(
+      'User', 
+      null, 
+      req.user, 
+      req, 
+      `Consulta de médicos por especialidad: ${specialty} - Encontrados: ${doctorsWithSpecialties.length}`
+    );
+
+    return res.json({
+      message: `Médicos encontrados para la especialidad: ${specialty}`,
+      doctors: doctorsWithSpecialties,
+      total: doctorsWithSpecialties.length,
+      filters: {
+        specialty,
+        role: 'MEDICO'
+      }
+    });
+
+  } catch (error) {
+    console.error("❌ [USER-SERVICE] Error en getDoctorsBySpecialty:", error);
+    return res.status(500).json({ 
+      message: "Error al filtrar médicos por especialidad",
+      error: error.message 
+    });
+  }
 };
 
 module.exports = {
@@ -1404,6 +1497,6 @@ module.exports = {
   updateNurseStateById,
   createDoctor,
   createNurse,
-  getDoctorsBySpecialty,
-  toggleUserStatus
+  toggleUserStatus,
+  getDoctorsBySpecialty
 };

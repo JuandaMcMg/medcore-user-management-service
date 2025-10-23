@@ -27,7 +27,7 @@ router.post('/doctors', verifyJWT, Users.createDoctor);
 router.post('/nurses', verifyJWT, Users.createNurse);
 //http://localhost:3003/api/v1/users
 router.get('/', verifyJWT, permission('user:list'), Users.getAllUsers);
-//http://localhost:3003/api/v1/affiliations/by-specialty?specialty=cardiologia
+//http://localhost:3003/api/users/by-specialty?specialty=cardiologia
 router.get('/by-specialty', verifyJWT, Users.getDoctorsBySpecialty);
 //http://localhost:3003/api/v1/users/by-role?role=DOCTOR
 router.get('/by-role', verifyJWT, Users.getUsersByRole);
