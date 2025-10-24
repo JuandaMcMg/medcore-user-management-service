@@ -429,17 +429,6 @@ const createByAdmin = async (req, res) => {
   
 };
 
-async function sendVerificationEmailViaAuth(email, code) {
-  try {
-    await axios.post(`${AUTH_SERVICE_URL}/send-verification`, { email, verificationCode: code });
-    return { success: true };
-  } catch (err) {
-    console.warn(`[EMAIL] No se pudo enviar email a ${email}: ${err.message}`);
-    return { success: false, error: err.message };
-  }
-}
-
-
 function buildBulkVerification(status) {
   // Solo genera código si el usuario está en estado pendiente
   if (status !== "PENDING") {
