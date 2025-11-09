@@ -4,10 +4,41 @@ const verifyJWT = require('../middlewares/authMiddleware');
 const permission = require('../middlewares/permissionMiddleware')
 const Users = require('../controllers/UserController');
 const requireRole = require('../middlewares/roleMiddleware');
+const { PrismaClient } = require("../generated/prisma")
+const prisma = new PrismaClient()
+
+const multer = require("multer");
+const path = require("path");
+const fs = require("fs");
+//const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } }); // 60MB limit
+
+const uploadDir = path.join(__dirname, "../uploads/profile-pictures");
+if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
 
-const multer = require('multer');
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } }); // 60MB limit
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadDir);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const filename = `${req.user.userId}-${Date.now()}${ext}`;
+    cb(null, filename);
+  },
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 60 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    if (!file.mimetype.startsWith("image/")) {
+      return cb(new Error("Solo se permiten archivos de imagen"));
+    }
+    cb(null, true);
+  },
+});
+
+
 
 const patientRoutes = require('./patientRoutes');
 //http://localhost:3003/api/v1/users/health
@@ -19,6 +50,40 @@ router.get('/health', (req, res) => {
     endpoint: "/api/v1/users/health"
   });
 });
+
+router.put(
+  "/profile-image",
+  verifyJWT,
+  upload.single("profileImage"),
+  async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No se subió ninguna imagen" });
+      }
+
+      // Guardar solo la ruta del archivo en la base de datos
+      const imagePath = `/uploads/profile-pictures/${req.file.filename}`;
+      console.log("📸 Nueva ruta imagen:", imagePath);
+
+      const updatedUser = await prisma.user.update({
+        where: { id: req.user.userId },
+        data: { profileImage: imagePath },
+      });
+
+     const fullUrl = `${req.protocol}://${req.get("host")}${imagePath}`;
+
+res.json({
+  message: "✅ Imagen actualizada correctamente",
+  profileImage: fullUrl, // Enviamos la URL completa
+});
+
+    } catch (err) {
+      console.error("❌ Error actualizando imagen:", err);
+      res.status(500).json({ error: "Error actualizando imagen" });
+    }
+  }
+);
+
 
 router.use('/patients', (req,res,next)=>{
   // Debug opcional para confirmar que entra
@@ -66,6 +131,7 @@ router.delete('/:id', verifyJWT, permission('user:delete'), Users.deleteUser);
 router.post('/bulk-import', verifyJWT, permission('user:create'), upload.single('file'), Users.bulkImport);
 
 router.get('/:id', verifyJWT, Users.getUserById);
+router.get('/doctors-with-affiliations', verifyJWT, Users.listDoctorsWithAffiliations);
 
 //http://localhost:3003/api/v1/users/register
 //router.post('/register', Users.registerUser);

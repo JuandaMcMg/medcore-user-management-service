@@ -2,6 +2,7 @@ const express = require("express");
 const database = require("./database/database");
 const bodyparser = require("body-parser");
 const userRoutes = require("./routes/userRoutes");
+const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
 const { sanitizeInputs } = require("./middlewares/sanitizeMiddleware");
@@ -33,6 +34,8 @@ app.get("/health", (_req, res) =>
     port: port
   })
 );
+
+app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
 app.use(helmet()); // Añade headers de seguridad
 app.use(bodyparser.json());

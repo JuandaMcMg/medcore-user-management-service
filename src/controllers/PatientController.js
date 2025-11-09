@@ -2,6 +2,7 @@
 const { PrismaClient } = require("../generated/prisma");
 const prisma = new PrismaClient();
 
+
 function mustInt(v, def = 1) {
   const n = parseInt(v, 10);
   return Number.isFinite(n) && n > 0 ? n : def;
@@ -61,27 +62,67 @@ async function getById(req, res) {
 }
 
 // PUT /api/users/patients/:id
+// PUT /api/users/patients/:id
 async function update(req, res) {
   try {
-    const { id } = req.params;
+    const { id } = req.params; // este es el id del paciente
     const data = req.body || {};
 
-    // whitelist de campos permitidos en Patient
-    const allowed = ["documentNumber","documentType","birthDate","age","gender","phone","address","status"];
-    const patch = {};
-    for (const k of allowed) if (k in data) patch[k] = data[k];
+    // Campos que pertenecen a Patient
+    const patientFields = [
+      "documentNumber",
+      "documentType",
+      "birthDate",
+      "age",
+      "gender",
+      "phone",
+      "address",
+      "status"
+    ];
 
-    const up = await prisma.patient.update({
-      where: { id },
-      data: patch,
-      include: { user: { select: { email: true, fullname: true } } }
+    // Campos que pertenecen al User
+    const userFields = [
+      "fullname",
+      "email",
+      "phone",
+      "date_of_birth",
+      "age",
+      "gender",
+      "address"
+    ];
+
+    const patientData = {};
+    const userData = {};
+
+    for (const key in data) {
+      if (patientFields.includes(key)) patientData[key] = data[key];
+      if (userFields.includes(key)) userData[key] = data[key];
+    }
+
+    // Actualizar ambos usando Prisma en una sola operación
+    const updatedPatient = await prisma.patient.update({
+      where: { userId: id },
+      data: {
+        ...patientData,
+        user: {
+          update: userData, // 👈 esto actualiza automáticamente el user asociado
+        },
+      },
+      include: {
+        user: true,
+      },
     });
 
-    res.json({ message: "Paciente actualizado", patient: up });
+    res.json({
+      message: "Paciente y usuario actualizados correctamente",
+      patient: updatedPatient,
+    });
   } catch (err) {
     console.error("patients.update", err);
-    if (err.code === "P2025") return res.status(404).json({ message: "Paciente no encontrado" });
-    res.status(500).json({ message: "Error actualizando paciente" });
+    if (err.code === "P2025") {
+      return res.status(404).json({ message: "Paciente no encontrado" });
+    }
+    res.status(500).json({ message: "Error actualizando paciente y usuario" });
   }
 }
 
