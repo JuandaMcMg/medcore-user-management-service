@@ -110,31 +110,38 @@ model ActivityLog {
 }
 
 model Department {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  name      String   @unique
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String         @id @default(auto()) @map("_id") @db.ObjectId
+  name        String         @unique
+  description String?      
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
 
-  // Relaciones
-  specialties   Specialty[]
-  userDeptRoles UserDeptRole[]
+  // Relaciones de ambos MS
+  specialties   Specialty[]     
+  userDeptRoles UserDeptRole[]    
+   
 
   @@map("departments")
 }
 
 model Specialty {
-  id           String   @id @default(auto()) @map("_id") @db.ObjectId
-  name         String   @unique
-  departmentId String   @db.ObjectId
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  id           String         @id @default(auto()) @map("_id") @db.ObjectId
+  name         String         @unique
+  description  String?        
+  departmentId String         @db.ObjectId
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
 
-  // Relaciones
+  // Relaciones de ambos MS
   department    Department     @relation(fields: [departmentId], references: [id])
-  userDeptRoles UserDeptRole[]
+  userDeptRoles UserDeptRole[] 
+  
+
 
   @@map("specialties")
 }
+
+
 
 model UserDeptRole {
   id           String   @id @default(auto()) @map("_id") @db.ObjectId

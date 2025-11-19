@@ -81,6 +81,111 @@ res.json({
     }
   }
 );
+// ruta temporal para verificar los datos
+router.get('/test-doctors-relations', async (req, res) => {
+  try {
+    const doctors = await prisma.user.findMany({
+      where: { role: 'MEDICO' },
+      include: {
+        userDeptRoles: {
+          include: {
+            department: { select: { name: true } },
+            specialty: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        },
+      },
+      take: 3 // Solo primeros 3 para prueba
+    });
+
+    console.log("Doctores con relaciones:", JSON.stringify(doctors, null, 2));
+
+    res.json({ 
+      message: "Datos de prueba",
+      doctors: doctors.map(doc => ({
+        id: doc.id,
+        name: doc.fullname,
+        email: doc.email,
+        department: doc.userDeptRoles[0]?.department?.name || 'Sin departamento',
+        specialty: doc.userDeptRoles[0]?.specialty?.name || 'Sin especialidad',
+        relations: doc.userDeptRoles
+      }))
+    });
+  } catch (error) {
+    console.error("Test error:", error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+
+router.post('/assign-doctors-to-dept', async (req, res) => {
+  try {
+    // Obtener todos los médicos sin userDeptRoles
+    const doctors = await prisma.user.findMany({
+      where: { 
+        role: 'MEDICO',
+        userDeptRoles: { none: {} } // Solo médicos sin relaciones
+      },
+      select: { id: true, email: true }
+    });
+
+    console.log("Médicos sin relaciones:", doctors);
+
+    // Obtener un departamento y especialidad por defecto
+    const defaultDepartment = await prisma.department.findFirst();
+    const defaultSpecialty = await prisma.specialty.findFirst({
+      where: { departmentId: defaultDepartment?.id }
+    });
+
+    if (!defaultDepartment || !defaultSpecialty) {
+      return res.status(400).json({ 
+        message: "No hay departamentos o especialidades configurados" 
+      });
+    }
+
+    console.log("Departamento por defecto:", defaultDepartment.name);
+    console.log("Especialidad por defecto:", defaultSpecialty.name);
+
+    // Crear relaciones para cada médico
+    const results = [];
+    for (const doctor of doctors) {
+      const userDeptRole = await prisma.userDeptRole.create({
+        data: {
+          userId: doctor.id,
+          departmentId: defaultDepartment.id,
+          specialtyId: defaultSpecialty.id,
+          role: 'MEDICO',
+        },
+        include: {
+          department: true,
+          specialty: true
+        }
+      });
+      
+      results.push({
+        doctor: doctor.email,
+        department: userDeptRole.department.name,
+        specialty: userDeptRole.specialty.name
+      });
+    }
+
+    console.log("Relaciones creadas:", results);
+
+    return res.json({
+      message: `${results.length} médicos asignados a departamento y especialidad`,
+      results
+    });
+
+  } catch (error) {
+    console.error("Error asignando relaciones:", error);
+    return res.status(500).json({ 
+      message: "Error asignando relaciones",
+      error: error.message 
+    });
+  }
+});
+
 
 
 router.use('/patients', (req,res,next)=>{
@@ -130,6 +235,16 @@ router.post('/bulk-import', verifyJWT, permission('user:create'), uploadCsv.sing
 
 router.get('/:id', verifyJWT, Users.getUserById);
 router.get('/doctors-with-affiliations', verifyJWT, Users.listDoctorsWithAffiliations);
+
+router.post("/api/v1/users/batch", async (req, res) => {
+  const { ids } = req.body;
+  const doctors = await prisma.doctor.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, name: true, email: true },
+  });
+  res.json({ ok: true, data: doctors });
+});
+
 
 //http://localhost:3003/api/v1/users/register
 //router.post('/register', Users.registerUser);
