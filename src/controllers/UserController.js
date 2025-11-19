@@ -39,6 +39,8 @@ const createDoctor = async (req, res) => {
       specialtyId,
     } = req.body
 
+    console.log("[DEBUG] Datos recibidos:", req.body);
+
     // Validaciones básicas
     if (
       !fullname ||
@@ -95,6 +97,7 @@ const createDoctor = async (req, res) => {
 
     const departmentId = specialty.departmentId
 
+
     // Encriptar contraseña
     const hashedPassword = await bcrypt.hash(password, 10)
 
@@ -111,7 +114,7 @@ const createDoctor = async (req, res) => {
         date_of_birth: birthDate,
         age,
         role: "MEDICO",
-        status: "ACTIVE",
+        status: "PENDING",
       },
     })
 
@@ -158,6 +161,7 @@ const createDoctor = async (req, res) => {
         email: newDoctor.email,
         role: newDoctor.role,
         specialtyId: affiliation.specialtyId,
+        departmentId: affiliation.departmentId,
       },
     })
   } catch (error) {
@@ -926,12 +930,10 @@ const getAllUsers = async (req, res) => {
 // Filtrar usuarios por rol
 const getUsersByRole = async (req, res) => {
   try {
-    const { role } = req.query
+    const { role } = req.query;
 
     if (!role || !VALID_ROLES.includes(role.toUpperCase())) {
-      return res
-        .status(400)
-        .json({ message: "Rol inválido o no proporcionado" })
+      return res.status(400).json({ message: "Rol inválido o no proporcionado" });
     }
 
     const users = await prisma.user.findMany({
@@ -950,8 +952,40 @@ const getUsersByRole = async (req, res) => {
         city: true,
         gender: true,
         createdAt: true,
+        userDeptRoles: {
+          select: {
+            department: { select: { name: true } },
+            specialty: { select: { name: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 1
+        },
       },
-    })
+    });
+
+    console.log("Usuarios encontrados:", users.length); // 👈 Para debug
+
+    const formattedUsers = users.map((u) => {
+      const latestDeptRole = u.userDeptRoles?.[0];
+      
+      return {
+        id: u.id,
+        email: u.email,
+        fullname: u.fullname,
+        role: u.role,
+        status: u.status,
+        id_number: u.id_number,
+        id_type: u.id_type,
+        age: u.age,
+        phone: u.phone,
+        address: u.address,
+        city: u.city,
+        gender: u.gender,
+        createdAt: u.createdAt,
+        department: latestDeptRole?.department?.name || null,
+        specialty: latestDeptRole?.specialty?.name || null,
+      };
+    });
 
     await logView(
       "User",
@@ -959,16 +993,14 @@ const getUsersByRole = async (req, res) => {
       req.user,
       req,
       `Consulta de usuarios filtrados por rol: ${role.toUpperCase()}`
-    )
+    );
 
-    return res.json({ users, total: users.length })
+    return res.json({ users: formattedUsers, total: formattedUsers.length });
   } catch (error) {
-    console.error("getUsersByRole error:", error)
-    return res
-      .status(500)
-      .json({ message: "Error consultando usuarios por rol" })
+    console.error("getUsersByRole error:", error);
+    return res.status(500).json({ message: "Error consultando usuarios por rol" });
   }
-}
+};
 
 // Obtener doctor por ID
 const getDoctorById = async (req, res) => {

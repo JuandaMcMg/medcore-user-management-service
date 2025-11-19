@@ -2,6 +2,7 @@ const express = require("express");
 const database = require("./database/database");
 const bodyparser = require("body-parser");
 const userRoutes = require("./routes/userRoutes");
+const patientRoutes = require("./routes/patientRoutes");
 const path = require("path");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -43,6 +44,7 @@ app.use(sanitizeInputs); // Sanitiza las entradas contra XSS
 app.use('/api/v1/users', userRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/v1/users', require('../src/routes/userRoutes'))
+app.use("/api/v1/users/patients", patientRoutes);
 
 
 // Error handling middleware
