@@ -44,7 +44,7 @@ router.get("/by-user/:userId", async (req, res) => {
 router.get("/", requireRole("ADMINISTRADOR", "MEDICO"), Patients.list);
 
 // GET /api/v1/patients/:id
-router.get(  "/:id", requireRole("ADMINISTRADOR", "MEDICO"), Patients.getById);
+router.get(  "/:id", requireRole("ADMINISTRADOR", "MEDICO", "PACIENTE", "ENFERMETO"), Patients.getById);
 
 // PUT /api/v1/patients/:id
 router.put("/:id", requireRole("ADMINISTRADOR", "MEDICO", "ENFERMERO"), Patients.update );

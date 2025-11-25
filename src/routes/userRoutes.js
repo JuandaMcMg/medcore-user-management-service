@@ -10,7 +10,7 @@ const prisma = new PrismaClient()
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
-//const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } }); // 60MB limit
+const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 60 * 1024 * 1024 } }); // 60MB limit
 
 const uploadDir = path.join(__dirname, "../uploads/profile-pictures");
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
@@ -37,8 +37,6 @@ const upload = multer({
     cb(null, true);
   },
 });
-
-
 
 const patientRoutes = require('./patientRoutes');
 //http://localhost:3003/api/v1/users/health
@@ -233,10 +231,10 @@ router.put('/:id/password', verifyJWT, Users.updatePassword);
 //http://localhost:3003/api/v1/users/:id
 router.delete('/:id', verifyJWT, permission('user:delete'), Users.deleteUser);
 //http://localhost:3003/api/v1/users/bulk-import
-router.post('/bulk-import', verifyJWT, permission('user:create'), upload.single('file'), Users.bulkImport);
+router.post('/bulk-import', verifyJWT, permission('user:create'), uploadCsv.single('file'), Users.bulkImport);
 
 router.get('/:id', verifyJWT, Users.getUserById);
-router.get('/doctors-with-affiliations', verifyJWT, Users.listDoctorsWithAffiliations);
+//router.get('/doctors-with-affiliations', verifyJWT, Users.listDoctorsWithAffiliations);
 
 router.post("/api/v1/users/batch", async (req, res) => {
   const { ids } = req.body;
