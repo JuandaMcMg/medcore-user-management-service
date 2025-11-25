@@ -104,7 +104,7 @@ async function update(req, res) {
       where: { id },
       data: {
         ...patientData,
-        ...(object.keys(userData).length > 0 &&{
+        ...(Object.keys(userData).length > 0 &&{
         user: { update: userData,}, //actualiza automáticamente el user asociado
         }),
       },
@@ -136,4 +136,60 @@ async function update(req, res) {
   }
 }
 
-module.exports = { list, getById, update };
+const getByUserId = async (req, res) => {
+  try {
+    const { userId } = req.params; // 👈 Debe llamarse igual que en la ruta
+
+    if (!userId) {
+      return res.status(400).json({ message: 'userId es requerido' });
+    }
+
+    // Como userId es @unique, puedes usar findUnique o findFirst.
+    const patient = await prisma.patient.findUnique({
+      where: { userId }, // 🔥 esto es clave
+      include: {
+        user: {
+          select: {
+            email: true,
+            fullname: true,
+            phone: true,
+            date_of_birth: true,
+            age: true,
+          },
+        },
+      },
+    });
+
+    if (!patient) {
+      return res.status(404).json({ message: 'Paciente no encontrado' });
+    }
+
+    // Formato de respuesta igual al de /users/patients/:id
+    const { user, ...rest } = patient;
+
+    return res.json({
+      ...rest,
+      user: user
+        ? {
+            email: user.email,
+            fullname: user.fullname,
+            phone: user.phone ?? null,
+            date_of_birth: user.date_of_birth ?? null,
+            age: user.age ?? null,
+          }
+        : null,
+    });
+  } catch (error) {
+    console.error('[getByUserId] error:', error);
+    return res
+      .status(500)
+      .json({ message: 'Error al obtener paciente por userId' });
+  }
+};
+
+module.exports = { 
+  list,
+  getById,
+  update,
+  getByUserId
+};
