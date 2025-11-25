@@ -234,7 +234,7 @@ router.delete('/:id', verifyJWT, permission('user:delete'), Users.deleteUser);
 router.post('/bulk-import', verifyJWT, permission('user:create'), uploadCsv.single('file'), Users.bulkImport);
 
 router.get('/:id', verifyJWT, Users.getUserById);
-router.get('/doctors-with-affiliations', verifyJWT, Users.listDoctorsWithAffiliations);
+//router.get('/doctors-with-affiliations', verifyJWT, Users.listDoctorsWithAffiliations);
 
 router.post("/api/v1/users/batch", async (req, res) => {
   const { ids } = req.body;

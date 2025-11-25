@@ -129,18 +129,34 @@ const createDoctor = async (req, res) => {
         role: "MEDICO",
       },
     })
+    //Crear afiliación en Organization Service (mantener en sync)
+    try {
+      const affiliationRes = await axios.post(
+        `${ORG_SERVICE_URL}/affiliations`,
+        {
+          userId: newDoctor.id,
+          role: "MEDICO",
+          departmentId,
+          specialtyId,
+        },
+        { headers: { Authorization: token } }
+      )
 
-    // Después de crear el doctor:
-   await axios.post(
-  "http://localhost:3004/api/v1/affiliations",
-  {
-    userId: newDoctor.id,
-    role: "MEDICO",
-    departmentId,
-    specialtyId,
-  },
-  { headers: { Authorization: token } }
-)
+      console.log(
+        "✅Afiliación creada:",
+        affiliationRes.data?.id || affiliationRes.data
+      )
+    } catch (orgError) {
+      console.error(
+        "❌Error al crear afiliación:",
+        orgError.response?.data || orgError.message
+      )
+      return res.status(500).json({
+        message: "Médico creado, pero falló la afiliación en Organization",
+        error: orgError.response?.data || orgError.message,
+      })
+    }
+
 
     console.log("✅ Afiliación creada:", affiliation.id)
 
@@ -358,6 +374,7 @@ function normalizeRole(role) {
 
 const createByAdmin = async (req, res) => {
   try {
+    const token = req.headers.authorization
     let {
       email,
       fullname,
@@ -371,6 +388,8 @@ const createByAdmin = async (req, res) => {
       address,
       city,
       blood_type,
+      specialtyId,
+      departmentId
     } = req.body
 
     // Validaciones de campos obligatorios
@@ -478,7 +497,8 @@ const createByAdmin = async (req, res) => {
       data: userData,
     })
 
-    if (newUser.role.toLocaleUpperCase() === "PACIENTE") {
+    //Si es PACIENTE → tabla patients
+    if (newUser.role.toUpperCase() === "PACIENTE") {
       try {
         await prisma.patient.create({
           data: {
@@ -490,14 +510,127 @@ const createByAdmin = async (req, res) => {
             gender: newUser.gender || "NO DEFINIDO",
             phone: newUser.phone || "",
             address: newUser.address || "",
-            status: "PENDING",
+            status: "ACTIVE",
           },
         })
-        console.log(
-          `✅ Paciente creado en tabla patients (userId=${newUser.id})`
-        )
+        console.log(`✅ Paciente creado en tabla patients (userId=${newUser.id})`)
       } catch (err) {
         console.error("❌ Error creando paciente vinculado:", err)
+      }
+    }
+
+    //Si es MEDICO → specialtyId obligatorio
+    if (newUser.role === "MEDICO") {
+      try {
+        if (!specialtyId) {
+          console.warn(
+            `[USER-SERVICE] Médico ${newUser.email} creado SIN specialtyId (no se crea userDeptRole/afiliación)`
+          )
+        } else {
+          // 2.1 Buscar la especialidad en este microservicio
+          const specialty = await prisma.specialty.findUnique({
+            where: { id: specialtyId },
+            select: { id: true, departmentId: true },
+          })
+
+          if (!specialty) {
+            console.warn(
+              `[USER-SERVICE] specialtyId ${specialtyId} no existe. Médico sin afiliación.`
+            )
+          } else {
+            const deptId = specialty.departmentId
+
+            //Crear relación interna userDeptRole
+            await prisma.userDeptRole.create({
+              data: {
+                userId: newUser.id,
+                departmentId: deptId,
+                specialtyId: specialty.id,
+                role: "MEDICO",
+              },
+            })
+            console.log(
+              `✅ userDeptRole creado para MEDICO ${newUser.email} (dep=${deptId}, spec=${specialty.id})`
+            )
+
+            //Crear afiliación en Organization Service
+            try {
+              await axios.post(
+                `${ORG_SERVICE_URL}/affiliations`,
+                {
+                  userId: newUser.id,
+                  role: "MEDICO",
+                  // el ORG-SERVICE verificará que coinciden
+                  departmentId: deptId,
+                  specialtyId: specialty.id,
+                },
+                { headers: { Authorization: token } }
+              )
+              console.log(
+                `✅Afiliación creada para MEDICO ${newUser.email}`
+              )
+            } catch (orgError) {
+              console.error(
+                "❌Error al crear afiliación MEDICO:",
+                orgError.response?.data || orgError.message
+              )
+            }
+          }
+        }
+      } catch (err) {
+        console.error(
+          "❌ Error creando userDeptRole/afiliación para MEDICO:",
+          err
+        )
+      }
+    }
+
+    //Si es ENFERMERO → solo departmentId
+    if (newUser.role === "ENFERMERO") {
+      try {
+        if (!departmentId) {
+          console.warn(
+            `[USER-SERVICE] Enfermero ${newUser.email} creado SIN departmentId (no se crea userDeptRole/afiliación)`
+          )
+        } else {
+          //Crear relación interna userDeptRole
+          await prisma.userDeptRole.create({
+            data: {
+              userId: newUser.id,
+              departmentId,
+              role: "ENFERMERO",
+            },
+          })
+          console.log(
+            ` userDeptRole creado para ENFERMERO ${newUser.email} (dep=${departmentId})`
+          )
+
+          //Crear afiliación en Organization Service
+          try {
+            await axios.post(
+              `${ORG_SERVICE_URL}/affiliations`,
+              {
+                userId: newUser.id,
+                role: "ENFERMERO",
+                departmentId,
+              },
+              { headers: { Authorization: token } }
+            )
+            console.log(
+              `✅Afiliación creada para ENFERMERO ${newUser.email}`
+            )
+          } catch (orgError) {
+            console.error(
+              "❌ Error al crear afiliación ENFERMERO:",
+              orgError.response?.data || orgError.message
+            )
+          }
+        }
+      } catch (err) {
+        console.error(
+          "❌ Error creando userDeptRole/afiliación para ENFERMERO:",
+          err
+        )
       }
     }
 
@@ -645,7 +778,7 @@ const bulkImport = async (req, res) => {
           await prisma.patient.create({
             data: {
               userId: user.id,
-              fullname: user.id.fullname,
+              fullname: user.fullname,
               birthDate: dob || undefined,
               age: typeof age === "number" ? age : undefined,
               phone: phone || undefined,
@@ -661,6 +794,7 @@ const bulkImport = async (req, res) => {
           const spec = await upsertSpecialtyByName(specialtyName, dep?.id)
 
           if (dep) {
+            //userDeptRole interno
             await prisma.userDeptRole.create({
               data: {
                 userId: user.id,
@@ -669,8 +803,39 @@ const bulkImport = async (req, res) => {
                 specialtyId: spec?.id || undefined,
               },
             })
+
+            //Afiliación en Organization Service
+            try {
+              await axios.post(
+                `${ORG_SERVICE_URL}/affiliations`,
+                {
+                  userId: user.id,
+                  role,
+                  departmentId: dep.id,
+                  specialtyId: spec?.id || undefined,
+                },
+                {
+                  headers: {
+                    Authorization: req.headers.authorization,
+                  },
+                }
+              )
+            } catch (orgError) {
+              console.error(
+                "❌Error creando afiliación para import:",
+                user.email,
+                orgError.response?.data || orgError.message
+              )
+              // Puedes registrar el error en `errors.push` si quieres reportarlo en la respuesta
+              errors.push({
+                email: user.email,
+                error: "Error creando afiliación en Organization",
+                detail: orgError.response?.data || orgError.message,
+              })
+            }
           }
         }
+
         // Emails de verificación (si aplica)
         if (user.status === "PENDING" && verificationCode) {
           toEmail.push({
@@ -860,13 +1025,29 @@ const getAllUsers = async (req, res) => {
     })
 
     console.log(
-      `📊 Usuarios encontrados: ${users.length}, roles: ${users
+      `Usuarios encontrados: ${users.length}, roles: ${users
         .map((u) => u.role)
         .join(", ")}`
     )
 
     // Conteo total para paginación
     const totalUsers = await prisma.user.count({ where })
+
+    const normalizedUsers = users.map((u) => ({
+      ...u,
+      role: normUpper(u.role),
+      status: normUpper(u.status),
+      userDeptRoles: u.userDeptRoles.map((r) => ({
+        ...r,
+        role: normUpper(r.role),
+        department: r.department
+          ? { ...r.department, name: normUpper(r.department.name) }
+          : r.department,
+        specialty: r.specialty
+          ? { ...r.specialty, name: normUpper(r.specialty.name) }
+          : r.specialty,
+      })),
+    }))
 
     // Construir descripción de filtros aplicados
     const appliedFilters = []
@@ -890,7 +1071,7 @@ const getAllUsers = async (req, res) => {
     )
 
     return res.json({
-      users,
+      users:normalizedUsers,
       pagination: {
         total: totalUsers,
         pages: Math.ceil(totalUsers / pageSize),
@@ -959,8 +1140,8 @@ const getUsersByRole = async (req, res) => {
         id: u.id,
         email: u.email,
         fullname: u.fullname,
-        role: u.role,
-        status: u.status,
+        role: normUpper(u.role),
+        status: normUpper(u.status),
         id_number: u.id_number,
         id_type: u.id_type,
         age: u.age,
@@ -969,8 +1150,12 @@ const getUsersByRole = async (req, res) => {
         city: u.city,
         gender: u.gender,
         createdAt: u.createdAt,
-        department: latestDeptRole?.department?.name || null,
-        specialty: latestDeptRole?.specialty?.name || null,
+        department: latestDeptRole?.department?.name
+          ? normUpper(latestDeptRole.department.name)
+          : null,
+        specialty: latestDeptRole?.specialty?.name
+          ? normUpper(latestDeptRole.specialty.name)
+          : null,
       };
     });
 
@@ -992,9 +1177,9 @@ const getUsersByRole = async (req, res) => {
 // Obtener doctor por ID
 const getDoctorById = async (req, res) => {
   try {
-    const { id } = req.params
+    const { id } = req.params;
 
-    // Buscar usuario por ID
+    // Buscar usuario por ID, incluyendo sus relaciones de depto/especialidad
     const user = await prisma.user.findUnique({
       where: { id },
       select: {
@@ -1012,14 +1197,36 @@ const getDoctorById = async (req, res) => {
         city: true,
         blood_type: true,
         createdAt: true,
+        userDeptRoles: {
+          select: {
+            id: true,
+            role: true,
+            departmentId: true,
+            specialtyId: true,
+            department: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            specialty: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+          },
+        },
       },
-    })
+    });
 
-    if (!user) return res.status(404).json({ message: "Usuario no encontrado" })
+    if (!user) {
+      return res.status(404).json({ message: "Usuario no encontrado" });
+    }
 
     // Verificar que sea doctor
     if (user.role.toUpperCase() !== "MEDICO") {
-      return res.status(403).json({ message: "El usuario no es un médico" })
+      return res.status(403).json({ message: "El usuario no es un médico" });
     }
 
     await logView(
@@ -1028,16 +1235,31 @@ const getDoctorById = async (req, res) => {
       req.user,
       req,
       `Consulta de médico ${user.email}`
-    )
+    );
 
-    return res.json(user)
+    const normalizedUser = {
+      ...user,
+      role: normUpper(user.role),
+      status: normUpper(user.status),
+      userDeptRoles: user.userDeptRoles.map((r) => ({
+        ...r,
+        role: normUpper(r.role),
+        department: r.department
+          ? { ...r.department, name: normUpper(r.department.name) }
+          : r.department,
+        specialty: r.specialty
+          ? { ...r.specialty, name: normUpper(r.specialty.name) }
+          : r.specialty,
+      })),
+    }
+
+    return res.json(normalizedUser)
+
   } catch (error) {
-    console.error("getDoctorById error:", error)
-    return res.status(500).json({ message: "Error consultando doctor" })
+    console.error("getDoctorById error:", error);
+    return res.status(500).json({ message: "Error consultando doctor" });
   }
-}
-
-// src/controllers/UserController.js
+};
 
 const updateDoctorById = async (req, res) => {
   try {
@@ -1045,13 +1267,13 @@ const updateDoctorById = async (req, res) => {
     const { fullname, email, phone, address, city, gender, specialtyId } = req.body
     const token = req.headers.authorization // obtener token del request
 
-    // 1️⃣ Buscar el usuario
+    //Buscar el usuario
     const doctor = await prisma.user.findUnique({ where: { id } })
     if (!doctor || doctor.role.toUpperCase() !== "MEDICO") {
       return res.status(404).json({ message: "Usuario no es un médico" })
     }
 
-    // 2️⃣ Buscar el departamento asociado a la especialidad (si hay)
+    //Buscar el departamento asociado a la especialidad
     let departmentId = null
     if (specialtyId) {
       const specialty = await prisma.specialty.findUnique({
@@ -1064,7 +1286,7 @@ const updateDoctorById = async (req, res) => {
       departmentId = specialty.departmentId
     }
 
-    // 3️⃣ Actualizar datos del usuario
+    //Actualizar datos del usuario
     const updatedUser = await prisma.user.update({
       where: { id },
       data: {
@@ -1077,7 +1299,7 @@ const updateDoctorById = async (req, res) => {
       },
     })
 
-    // 4️⃣ Actualizar la relación userDeptRole (dentro del microservicio actual)
+    //Actualizar la relación userDeptRole (dentro del microservicio)
     await prisma.userDeptRole.updateMany({
       where: { userId: id },
       data: {
@@ -1087,11 +1309,21 @@ const updateDoctorById = async (req, res) => {
       },
     })
 
-    // 5️⃣ Actualizar afiliación en el microservicio de ORGANIZATION (puerto 3004)
+    //Actualizar afiliación en el microservicio de ORGANIZATION
     try {
+      //Eliminar afiliaciones previas al usuarios
+      await axios.delete(
+        `${ORG_SERVICE_URL}/affiliations/${id}`,
+        {
+          headers:{ Authorization:token,},
+        }
+      )
+      //Actualizar la nueva afiliación
       await axios.put(
         `http://localhost:3004/api/v1/affiliations/${id}`,
         {
+          userId:id,
+          role:"MEDICO",
           departmentId,
           specialtyId,
         },
@@ -1101,9 +1333,9 @@ const updateDoctorById = async (req, res) => {
           },
         }
       )
-      console.log("✅ [ORGANIZATION] Afiliación actualizada correctamente")
+      console.log("✅Afiliación actualizada correctamente")
     } catch (orgError) {
-      console.error("❌ [ORGANIZATION] Error al actualizar afiliación:", orgError.response?.data || orgError.message)
+      console.error("❌Error al actualizar afiliación:", orgError.response?.data || orgError.message)
     }
 
     // ✅ Respuesta final
@@ -1116,7 +1348,6 @@ const updateDoctorById = async (req, res) => {
     res.status(500).json({ error: error.message })
   }
 }
-
 
 const updateDoctorStateById = async (req, res) => {
   try {
@@ -1638,10 +1869,10 @@ const deleteUser = async (req, res) => {
           Authorization: token,
         },
       });
-      console.log("✅ [ORGANIZATION] Afiliaciones eliminadas correctamente");
+      console.log("✅Afiliaciones eliminadas correctamente");
     } catch (orgError) {
       console.error(
-        "❌ [ORGANIZATION] Error al eliminar afiliaciones:",
+        "❌Error al eliminar afiliaciones:",
         orgError.response?.data || orgError.message
       );
     }
@@ -1657,21 +1888,20 @@ const deleteUser = async (req, res) => {
 // Filtrar doctores por especialidad
 const getDoctorsBySpecialty = async (req, res) => {
   try {
-    const { specialty } = req.query
+    const { specialty, specialtyId } = req.query
     const token = req.headers.authorization
 
-    // Validar que se proporcione la especialidad
-    if (!specialty) {
+    if (!specialty && !specialtyId) {
       return res.status(400).json({
-        message: "El parámetro 'specialty' es requerido",
+        message: "Debes enviar 'specialty' (nombre) o 'specialtyId'",
       })
     }
 
     console.log(
-      `🔍 [USER-SERVICE] Buscando doctores por especialidad: ${specialty}`
+      `🔍 [USER-SERVICE] Buscando doctores por`,
+      specialtyId ? `specialtyId: ${specialtyId}` : `specialty: ${specialty}`
     )
 
-    // 1. Obtener afiliaciones de médicos con la especialidad específica
     let affiliationsResponse
     try {
       affiliationsResponse = await axios.get(
@@ -1679,7 +1909,8 @@ const getDoctorsBySpecialty = async (req, res) => {
         {
           params: {
             role: "MEDICO",
-            specialty: specialty,
+            specialtyId: specialtyId || undefined,
+            specialty: !specialtyId ? specialty : undefined,
           },
           headers: {
             Authorization: token,
@@ -1699,7 +1930,7 @@ const getDoctorsBySpecialty = async (req, res) => {
 
     const affiliations = affiliationsResponse.data
     console.log(
-      `📊 [USER-SERVICE] Afiliaciones encontradas: ${affiliations.length}`
+      ` [USER-SERVICE] Afiliaciones encontradas: ${affiliations.length}`
     )
 
     if (affiliations.length === 0) {
@@ -1756,7 +1987,6 @@ const getDoctorsBySpecialty = async (req, res) => {
         (aff) => aff.userId === doctor.id
       )
 
-      // Extraer información de departamentos y especialidades
       const departments = []
       const specialties = []
 
@@ -1767,7 +1997,7 @@ const getDoctorsBySpecialty = async (req, res) => {
         ) {
           departments.push({
             id: aff.department.id,
-            name: aff.department.name,
+            name: normUpper(aff.department.name),
           })
         }
 
@@ -1777,28 +2007,31 @@ const getDoctorsBySpecialty = async (req, res) => {
         ) {
           specialties.push({
             id: aff.specialty.id,
-            name: aff.specialty.name,
+            name: normUpper(aff.specialty.name),
           })
         }
       })
 
       return {
         ...doctor,
+        role: normUpper(doctor.role),
+        status: normUpper(doctor.status),
         departments,
         specialties,
         affiliations: doctorAffiliations.map((aff) => ({
           id: aff.id,
-          role: aff.role,
+          role: normUpper(aff.role),
           department: aff.department
-            ? { id: aff.department.id, name: aff.department.name }
+            ? { id: aff.department.id, name: normUpper(aff.department.name) }
             : null,
           specialty: aff.specialty
-            ? { id: aff.specialty.id, name: aff.specialty.name }
+            ? { id: aff.specialty.id, name: normUpper(aff.specialty.name) }
             : null,
           createdAt: aff.createdAt,
         })),
       }
     })
+
 
     // Registrar la consulta
     await logView(

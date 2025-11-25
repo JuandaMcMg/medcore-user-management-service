@@ -101,15 +101,25 @@ async function update(req, res) {
 
     // Actualizar ambos usando Prisma en una sola operación
     const updatedPatient = await prisma.patient.update({
-      where: { userId: id },
+      where: { id },
       data: {
         ...patientData,
-        user: {
-          update: userData, // 👈 esto actualiza automáticamente el user asociado
-        },
+        ...(object.keys(userData).length > 0 &&{
+        user: { update: userData,}, //actualiza automáticamente el user asociado
+        }),
       },
       include: {
-        user: true,
+        user:{
+          select:{
+            email: true,
+            fullname: true,
+            phone: true,
+            date_of_birth: true,
+            age: true,
+            gender: true,
+            address: true,
+          },
+        },
       },
     });
 
