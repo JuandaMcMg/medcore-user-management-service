@@ -198,6 +198,7 @@ router.use('/patients', (req,res,next)=>{
 
 //http://localhost:3003/api/v1/users
 router.post('/', verifyJWT, permission('user:create'), Users.createByAdmin); 
+
 // http://localhost:3003/api/v1/users/doctors
 router.post('/doctors', verifyJWT, Users.createDoctor);
 //http://localhost:3003/api/v1/users/nurses
